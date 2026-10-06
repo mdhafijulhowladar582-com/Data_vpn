@@ -15,17 +15,33 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Flutter project বানিয়ে আমাদের ফাইল বসানো
+      - name: ফাইল খুঁজে সাজিয়ে Flutter project বানানো
         run: |
+          echo "=== repo-তে যে ফাইলগুলো আছে ==="
+          find . -path ./.git -prune -o -type f -print | head -100
           flutter create --org com.you --project-name firewall --platforms android build_app
-          rm -rf build_app/lib
-          cp -r lib build_app/lib
-          cp pubspec.yaml build_app/pubspec.yaml
-          K=build_app/android/app/src/main/kotlin/com/you/firewall
+          B=build_app
+          rm -rf $B/lib
+          mkdir -p $B/lib/models $B/lib/services $B/lib/screens $B/lib/widgets
+          K=$B/android/app/src/main/kotlin/com/you/firewall
           mkdir -p $K
           rm -f $K/*.kt
-          cp android/app/src/main/kotlin/com/you/firewall/*.kt $K/
-          cp android/app/src/main/AndroidManifest.xml build_app/android/app/src/main/AndroidManifest.xml
+          missing=""
+          place() {
+            f=$(find . -path ./build_app -prune -o -path ./.git -prune -o -type f -name "$1" -print | head -1)
+            if [ -z "$f" ]; then missing="$missing $1"; else cp "$f" "$2/$1"; fi
+          }
+          place main.dart $B/lib
+          for n in app_info.dart rule.dart; do place $n $B/lib/models; done
+          for n in vpn_channel.dart rules_storage.dart log_service.dart usage_service.dart; do place $n $B/lib/services; done
+          for n in home_screen.dart app_list_screen.dart schedule_screen.dart logs_screen.dart lock_screen.dart usage_screen.dart; do place $n $B/lib/screens; done
+          place app_tile.dart $B/lib/widgets
+          for n in MainActivity.kt FirewallVpnService.kt BootReceiver.kt ScreenReceiver.kt PackageReceiver.kt TileService.kt; do place $n $K; done
+          place AndroidManifest.xml $B/android/app/src/main
+          if [ -n "$missing" ]; then
+            echo "::error::এই ফাইলগুলো repo-তে নেই:$missing"
+            exit 1
+          fi
       - name: Build
         run: |
           cd build_app
