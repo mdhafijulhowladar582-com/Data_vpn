@@ -17,6 +17,7 @@ jobs:
           channel: stable
       - name: ফাইল খুঁজে সাজিয়ে Flutter project বানানো
         run: |
+          if [ -f firewall_app.zip ]; then unzip -oq firewall_app.zip -d unz; fi
           echo "=== repo-তে যে ফাইলগুলো আছে ==="
           find . -path ./.git -prune -o -type f -print | head -100
           flutter create --org com.you --project-name firewall --platforms android build_app
