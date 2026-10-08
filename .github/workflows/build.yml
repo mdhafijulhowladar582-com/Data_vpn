@@ -2,6 +2,7 @@ name: Build APK
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -13,57 +14,34 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
-      - name: জিপ খুলে Flutter project বানানো
+      # zip-এ শুধু lib, pubspec আর android/app/src আছে, তাই বাকি Gradle কাঠামো flutter create দিয়ে বানাই।
+      # আপনার নিজের Kotlin, Manifest আর res আগে সরিয়ে রেখে পরে আবার বসাই, যেন কিছু ওভাররাইট না হয়।
+      - name: Android কাঠামো বানানো
         run: |
-          set -e
-          rm -rf unz
-          if [ -f firewall_app.zip ]; then unzip -oq firewall_app.zip -d unz; fi
+          mkdir -p /tmp/keep
+          cp -r android/app/src/main/. /tmp/keep/
+          flutter create --platforms=android --org com.you --project-name firewall .
+          cp -r /tmp/keep/. android/app/src/main/
 
-          # pubspec.yaml যেখানে আছে সেটাই সোর্সের রুট (জিপের ভেতরে ফোল্ডার থাকলেও চলবে)
-          P=$(find unz -name pubspec.yaml -not -path '*/build_app/*' | head -1)
-          if [ -z "$P" ]; then
-            echo "::error::firewall_app.zip-এ pubspec.yaml নেই"
-            exit 1
-          fi
-          SRC=$(dirname "$P")
-          echo "সোর্স রুট: $SRC"
-          find "$SRC" -type f | sort
-
-          flutter create --org com.you --project-name firewall --platforms android build_app
-          B=build_app
-
-          # Dart কোড পুরোটা বদলে দিই
-          rm -rf $B/lib
-          cp -r "$SRC/lib" $B/lib
-          cp "$SRC/pubspec.yaml" $B/pubspec.yaml
-
-          # Kotlin: flutter create-এর বানানো ফাইল মুছে আমাদের সব .kt বসাই
-          rm -rf $B/android/app/src/main/kotlin
-          mkdir -p $B/android/app/src/main/kotlin/com/you/firewall
-          cp "$SRC"/android/app/src/main/kotlin/com/you/firewall/*.kt \
-             $B/android/app/src/main/kotlin/com/you/firewall/
-
-          # Manifest ও নতুন রিসোর্স (guard_config.xml, guard_strings.xml)
-          cp "$SRC/android/app/src/main/AndroidManifest.xml" $B/android/app/src/main/AndroidManifest.xml
-          if [ -d "$SRC/android/app/src/main/res" ]; then
-            cp -r "$SRC/android/app/src/main/res/." $B/android/app/src/main/res/
-          fi
-
-          cd $B
-          flutter pub get
-
-      - name: Build
+      - name: minSdk ২৩ করা
         run: |
-          cd build_app
-          flutter build apk --release
+          f=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -n1)
+          sed -i -E 's/minSdk(Version)? *(=)? *[A-Za-z0-9_.()]+/minSdk = 23/' "$f"
+          grep -n "minSdk" "$f"
+
+      - run: flutter pub get
+
+      - name: APK বিল্ড
+        run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
           name: firewall-apk
-          path: build_app/build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-release.apk
