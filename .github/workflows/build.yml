@@ -1,53 +1,68 @@
 name: Build APK
+
 on:
   push:
-    branches: [main]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: ফাইল খুঁজে সাজিয়ে Flutter project বানানো
+
+      - name: জিপ খুলে Flutter project বানানো
         run: |
+          set -e
+          rm -rf unz
           if [ -f firewall_app.zip ]; then unzip -oq firewall_app.zip -d unz; fi
-          echo "=== repo-তে যে ফাইলগুলো আছে ==="
-          find . -path ./.git -prune -o -type f -print | head -100
-          flutter create --org com.you --project-name firewall --platforms android build_app
-          B=build_app
-          rm -rf $B/lib
-          mkdir -p $B/lib/models $B/lib/services $B/lib/screens $B/lib/widgets
-          K=$B/android/app/src/main/kotlin/com/you/firewall
-          mkdir -p $K
-          rm -f $K/*.kt
-          missing=""
-          place() {
-            f=$(find . -path ./build_app -prune -o -path ./.git -prune -o -type f -name "$1" -print | head -1)
-            if [ -z "$f" ]; then missing="$missing $1"; else cp "$f" "$2/$1"; fi
-          }
-          place main.dart $B/lib
-          for n in app_info.dart rule.dart; do place $n $B/lib/models; done
-          for n in vpn_channel.dart rules_storage.dart log_service.dart usage_service.dart; do place $n $B/lib/services; done
-          for n in home_screen.dart app_list_screen.dart schedule_screen.dart logs_screen.dart lock_screen.dart usage_screen.dart; do place $n $B/lib/screens; done
-          place app_tile.dart $B/lib/widgets
-          for n in MainActivity.kt FirewallVpnService.kt BootReceiver.kt ScreenReceiver.kt PackageReceiver.kt TileService.kt; do place $n $K; done
-          place AndroidManifest.xml $B/android/app/src/main
-          if [ -n "$missing" ]; then
-            echo "::error::এই ফাইলগুলো repo-তে নেই:$missing"
+
+          # pubspec.yaml যেখানে আছে সেটাই সোর্সের রুট (জিপের ভেতরে ফোল্ডার থাকলেও চলবে)
+          P=$(find unz -name pubspec.yaml -not -path '*/build_app/*' | head -1)
+          if [ -z "$P" ]; then
+            echo "::error::firewall_app.zip-এ pubspec.yaml নেই"
             exit 1
           fi
+          SRC=$(dirname "$P")
+          echo "সোর্স রুট: $SRC"
+          find "$SRC" -type f | sort
+
+          flutter create --org com.you --project-name firewall --platforms android build_app
+          B=build_app
+
+          # Dart কোড পুরোটা বদলে দিই
+          rm -rf $B/lib
+          cp -r "$SRC/lib" $B/lib
+          cp "$SRC/pubspec.yaml" $B/pubspec.yaml
+
+          # Kotlin: flutter create-এর বানানো ফাইল মুছে আমাদের সব .kt বসাই
+          rm -rf $B/android/app/src/main/kotlin
+          mkdir -p $B/android/app/src/main/kotlin/com/you/firewall
+          cp "$SRC"/android/app/src/main/kotlin/com/you/firewall/*.kt \
+             $B/android/app/src/main/kotlin/com/you/firewall/
+
+          # Manifest ও নতুন রিসোর্স (guard_config.xml, guard_strings.xml)
+          cp "$SRC/android/app/src/main/AndroidManifest.xml" $B/android/app/src/main/AndroidManifest.xml
+          if [ -d "$SRC/android/app/src/main/res" ]; then
+            cp -r "$SRC/android/app/src/main/res/." $B/android/app/src/main/res/
+          fi
+
+          cd $B
+          flutter pub get
+
       - name: Build
         run: |
           cd build_app
-          flutter pub get
           flutter build apk --release
+
       - uses: actions/upload-artifact@v4
         with:
           name: firewall-apk
