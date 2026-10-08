@@ -21,14 +21,19 @@ jobs:
           channel: stable
           cache: true
 
-      # zip-এ শুধু lib, pubspec আর android/app/src আছে, তাই বাকি Gradle কাঠামো flutter create দিয়ে বানাই।
-      # আপনার নিজের Kotlin, Manifest আর res আগে সরিয়ে রেখে পরে আবার বসাই, যেন কিছু ওভাররাইট না হয়।
+      # repo-তে শুধু lib, pubspec আর android/app/src আছে, বাকি Gradle কাঠামো flutter create বানায়।
+      # নিজের Kotlin, Manifest, res আগে সরিয়ে রেখে পরে আবার বসাই।
       - name: Android কাঠামো বানানো
         run: |
           mkdir -p /tmp/keep
-          cp -r android/app/src/main/. /tmp/keep/
+          if [ -d android/app/src/main ]; then
+            cp -r android/app/src/main/. /tmp/keep/
+          else
+            echo "::warning::android/app/src/main নেই"
+          fi
           flutter create --platforms=android --org com.you --project-name firewall .
           cp -r /tmp/keep/. android/app/src/main/
+          ls android/app/src/main/kotlin/com/you/firewall/ | head -30
 
       - name: minSdk ২৩ করা
         run: |
