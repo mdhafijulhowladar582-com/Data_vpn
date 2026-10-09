@@ -11,6 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # রিপোতে firewall_app.zip থাকলে খুলে নেয়। কোড সরাসরি আপলোড করা থাকলে এই ধাপ কিছু করে না।
+      - name: zip খোলা
+        run: |
+          if [ -f firewall_app.zip ]; then
+            unzip -oq firewall_app.zip
+          fi
+          ls
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -29,11 +37,12 @@ jobs:
           if [ -d android/app/src/main ]; then
             cp -r android/app/src/main/. /tmp/keep/
           else
-            echo "::warning::android/app/src/main নেই"
+            echo "::error::android/app/src/main নেই, কোড পাওয়া যায়নি"
+            exit 1
           fi
           flutter create --platforms=android --org com.you --project-name firewall .
           cp -r /tmp/keep/. android/app/src/main/
-          ls android/app/src/main/kotlin/com/you/firewall/ | head -30
+          ls android/app/src/main/kotlin/com/you/firewall/ | head -40
 
       - name: minSdk ২৩ করা
         run: |
