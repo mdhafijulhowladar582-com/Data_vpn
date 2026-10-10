@@ -1,5 +1,8 @@
 name: Build APK
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [main]
@@ -55,7 +58,37 @@ jobs:
       - name: APK বিল্ড
         run: flutter build apk --release
 
+      # সই: Secrets থাকলে নিজের key দিয়ে সই করা APK, না থাকলে আগের মতো debug key-র APK
+      - name: APK সই করা
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          IN=build/app/outputs/flutter-apk/app-release.apk
+          OUT=firewall.apk
+          if [ -n "$KS_B64" ] && [ -n "$KS_PASS" ] && [ -n "$KS_ALIAS" ]; then
+            echo "$KS_B64" | base64 -d > /tmp/release.jks
+            APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)apksigner
+            "$APKSIGNER" sign --ks /tmp/release.jks --ks-key-alias "$KS_ALIAS" \
+              --ks-pass env:KS_PASS --key-pass env:KS_PASS --out "$OUT" "$IN"
+            "$APKSIGNER" verify --print-certs "$OUT" | head -3
+            rm -f /tmp/release.jks
+          else
+            echo "::warning::Secrets নেই, তাই debug key-তে সই করা APK হচ্ছে"
+            cp "$IN" "$OUT"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: firewall-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: firewall.apk
+
+      # ডাউনলোড লিংকের জন্য Releases-এ রাখা
+      - name: Release বানানো
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" firewall.apk \
+            --title "Build ${{ github.run_number }}" \
+            --notes "স্বয়ংক্রিয় build, commit ${GITHUB_SHA::7}"
